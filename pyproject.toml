@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "awscreen"
+version = "1.0.0"
+description = "Find elements on screen by describing what they look like"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Aither"}]
+
+dependencies = [
+    "Pillow>=10.0.0;platform_system=='Windows'",
+]
+
+[project.scripts]
+awscreen = "awscreen.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

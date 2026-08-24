@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1",
+  "name": "awscreen",
+  "description": "See this machine — what is on screen, and where to click it.",
+  "url": "https://aitherium.github.io/awscreen/",
+  "repository": "https://github.com/Aitherium/awscreen",
+  "kind": "tool",
+  "status": "planned",
+  "adopt": "Find the thing you want to click by describing what it looks like.",
+  "pairs_with": [
+    "awdk",
+    "awvision",
+    "awbrowse"
+  ],
+  "includes": [],
+  "speaks_to": "any UI-parsing service"
+}
