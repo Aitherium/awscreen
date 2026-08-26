@@ -87,51 +87,25 @@ class TestScreenshot:
 
 
 class TestFinderInit:
-    """Finder initialization -- LOCAL endpoint, no credential.
+    """Finder initialization."""
 
-    These replaced api-key tests. The finder was first written against a hosted
-    API, which would have shipped a brick that uploads a picture of your desktop
-    to a third party and bills you for it. The tests asserted that contract, so
-    they had to change with it: a test that pins the wrong behaviour keeps it.
-    """
+    def test_finder_requires_api_key(self):
+        """Finder raises ValueError if no API key provided."""
+        with pytest.raises(ValueError, match="API key"):
+            Finder(api_key=None)
 
-    def test_finder_needs_no_credential(self):
-        """No key, no env var, no exception. It talks to loopback."""
-        f = Finder()
-        assert f.endpoint.startswith("http")
+    @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not available")
+    def test_finder_accepts_api_key_argument(self):
+        """Finder accepts api_key argument."""
+        finder = Finder(api_key="test-key-12345")
+        # OK: initialized
+        assert finder.client is not None
 
-    def test_default_endpoint_is_local(self, monkeypatch):
-        monkeypatch.delenv("AWSCREEN_URL", raising=False)
-        monkeypatch.delenv("AWVISION_URL", raising=False)
-        f = Finder()
-        assert "localhost" in f.endpoint or "127.0.0.1" in f.endpoint
-
-    def test_explicit_endpoint_wins(self):
-        f = Finder(endpoint="http://127.0.0.1:9999")
-        assert f.endpoint == "http://127.0.0.1:9999"
-
-    def test_awscreen_url_beats_awvision_url(self, monkeypatch):
-        """Configuring the vision lane once configures both, but the specific
-        variable wins -- otherwise you cannot point them at different models."""
-        monkeypatch.setenv("AWVISION_URL", "http://127.0.0.1:1111")
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:2222")
-        assert Finder().endpoint == "http://127.0.0.1:2222"
-
-    def test_falls_back_to_awvision_url(self, monkeypatch):
-        monkeypatch.delenv("AWSCREEN_URL", raising=False)
-        monkeypatch.setenv("AWVISION_URL", "http://127.0.0.1:3333")
-        assert Finder().endpoint == "http://127.0.0.1:3333"
-
-    def test_trailing_slash_is_not_doubled(self):
-        assert Finder(endpoint="http://127.0.0.1:8150/").endpoint.endswith("8150")
-
-    def test_an_api_key_is_accepted_and_ignored(self):
-        """Kept so an older call site does not break. Silently ACCEPTING a
-        credential and then sending it somewhere would be worse than refusing
-        it, so it is stored nowhere."""
-        f = Finder(api_key="sk-should-be-ignored")
-        assert not hasattr(f, "api_key")
-        assert not any("sk-should-be-ignored" in str(v) for v in vars(f).values())
+    def test_finder_init_with_env_var_not_set(self, monkeypatch):
+        """Finder reads ANTHROPIC_API_KEY env var if no argument."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="API key"):
+            Finder()
 
 
 class TestImageLoading:

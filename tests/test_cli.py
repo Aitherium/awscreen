@@ -55,25 +55,42 @@ class TestCLIArgParsing:
         result = main(["/nonexistent/image.png", "description"])
         assert result == 2
 
-    def test_cli_unreachable_endpoint_does_not_read_as_not_found(self, monkeypatch):
-        """Replaced test_cli_missing_api_key_exits_2: there is no api key any
-        more. The failure that matters now is an endpoint that is not there --
-        it must REFUSE, because an empty result would be read as 'your element
-        is not on screen', which is a different and wrong fact."""
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:1")
-        from awscreen.finder import Finder
-        f = Finder()
-        assert "127.0.0.1:1" in f.endpoint
+    def test_cli_missing_api_key_exits_2(self, monkeypatch):
+        """Missing API key exits 2."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            p = Path(tmp.name)
+            # Write minimal PNG
+            png_bytes = (
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+                b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x055"
+                b"\xcd\xfb\xe7\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+            tmp.write(png_bytes)
+            tmp.flush()
+            tmp.close()
+            try:
+                result = main([str(p), "find something"])
+                assert result == 2
+            finally:
+                p.unlink()
 
 
 class _FakeFinder:
-    """Stands in for the real Finder so CLI tests exercise the CLI, not a
-    network call. Restored: my edit above removed its `class` line while
-    replacing the api-key test that sat directly above it."""
+    """Stands in for Finder so the CLI's OUTPUT and EXIT-CODE contract can be
+    tested without a network call. `elements` is what find() returns; setting it
+    to [] exercises the no-match branch.
+
+    These four tests were `@pytest.mark.skipif(True, reason="Requires API
+    mocking")` with EMPTY bodies -- an unconditional skip wearing a conditional's
+    clothes, so the CLI's entire output layer was asserted by nothing while the
+    suite reported green.
+    """
 
     elements: list = []
 
-    def __init__(self, endpoint=None, model=None, api_key=None):
+    def __init__(self, api_key=None):
         pass
 
     def load_image(self, path):
@@ -102,7 +119,7 @@ class TestCLIOutput:
         """Default output is human-readable text naming the match."""
         img = tmp_path / "s.png"
         img.write_bytes(b"x")
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:8150")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         _install_fake(monkeypatch, [_an_element()])
 
         rc = main([str(img), "the blue button"])
@@ -120,7 +137,7 @@ class TestCLIOutput:
 
         img = tmp_path / "s.png"
         img.write_bytes(b"x")
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:8150")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         _install_fake(monkeypatch, [_an_element()])
 
         rc = main([str(img), "the blue button", "--format", "json"])
@@ -139,7 +156,7 @@ class TestCLIExitCodes:
         """Finding at least one element exits 0."""
         img = tmp_path / "s.png"
         img.write_bytes(b"x")
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:8150")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         _install_fake(monkeypatch, [_an_element()])
         assert main([str(img), "anything"]) == 0
 
@@ -149,7 +166,7 @@ class TestCLIExitCodes:
 
         img = tmp_path / "s.png"
         img.write_bytes(b"x")
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:8150")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         _install_fake(monkeypatch, [])
 
         assert main([str(img), "absent thing"]) == 1
@@ -159,15 +176,8 @@ class TestCLIExitCodes:
         assert _json.loads(capsys.readouterr().out)["found"] == 0
 
     def test_cli_exits_2_on_error(self, monkeypatch):
-        """Errors (unreachable endpoint, unreadable file) exit 2.
-
-        Points at a port nothing can serve. The previous version deleted an
-        api-key env var and then let the call fall through to the DEFAULT
-        endpoint -- which on a developer box is often a real running service,
-        so the test made a live network call and passed or failed depending on
-        what happened to be listening.
-        """
-        monkeypatch.setenv("AWSCREEN_URL", "http://127.0.0.1:1")
+        """Errors (API, file, key) exit 2."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             p = Path(tmp.name)
             png_bytes = (

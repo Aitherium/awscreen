@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -45,8 +46,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Natural language description of element to find",
     )
     ap.add_argument(
-        "--endpoint",
-        help="local vision endpoint (or set AWSCREEN_URL / AWVISION_URL)",
+        "--api-key",
+        help="Anthropic API key (or set ANTHROPIC_API_KEY env var)",
     )
     ap.add_argument(
         "--format",
@@ -64,11 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         ap.print_help()
         return 2
 
-    # No credential: this talks to loopback. See finder.py for why.
-    endpoint = getattr(args, "endpoint", None)
+    api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
 
     try:
-        finder = Finder(endpoint=endpoint)
+        finder = Finder(api_key=api_key)
     except ValueError as exc:
         print(f"DEAD: {exc}", file=sys.stderr)
         return 2
@@ -136,25 +136,15 @@ def _self_test() -> int:
     - Finder initialization (without calling API)
     """
     try:
-        # Test 1: no credential is REQUIRED, and the default is loopback.
-        # This arm used to assert the opposite -- that a Finder without an API
-        # key must fail. It was written against a hosted backend, which would
-        # have shipped a brick that uploads a picture of your desktop to a
-        # third party. The rule inverted with the design, and a self-test that
-        # still pinned the old one would have kept it.
-        finder = Finder()
-        if not finder.endpoint.startswith("http"):
-            print("FAIL: Finder has no endpoint")
+        # Test 1: Finder requires API key
+        try:
+            finder = Finder(api_key=None)
+            print("FAIL: Finder should require API key")
             return 1
-        if "localhost" not in finder.endpoint and "127.0.0.1" not in finder.endpoint:
-            print("FAIL: default endpoint is not loopback: " + finder.endpoint)
-            return 1
-        # An api_key handed in by an older call site must be ignored, never
-        # stored -- accepting a credential and then sending it somewhere is
-        # worse than refusing it.
-        if any("sk-probe" in str(v) for v in vars(Finder(api_key="sk-probe")).values()):
-            print("FAIL: an api_key was retained")
-            return 1
+        except ValueError as exc:
+            if "API key" not in str(exc):
+                print(f"FAIL: Wrong error message: {exc}")
+                return 1
 
         # Test 2: Can initialize with key (but won't call API)
         with contextlib.suppress(ImportError):

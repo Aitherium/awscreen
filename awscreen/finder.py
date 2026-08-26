@@ -1,30 +1,16 @@
-"""Core visual element finder, against a LOCAL vision endpoint.
-
-This brick sends a picture of YOUR SCREEN somewhere. That makes the choice of
-"somewhere" the most consequential decision in the file, so it is stated here:
-it goes to a loopback endpoint you run, in the OpenAI /v1/chat/completions
-shape -- the same one awvision uses, deliberately, so one local model serves
-both and there is one thing to stand up rather than two.
-
-It was first written against a HOSTED API with an api-key, which would have
-shipped a brick that uploads your desktop to a third party and bills you for
-it. Nothing in the aw* family does that, and a screen recorder is the worst
-possible place to start.
-
-Endpoint and model: AWSCREEN_URL / AWSCREEN_MODEL, falling back to
-AWVISION_URL / AWVISION_MODEL so configuring the vision lane once configures
-both.
-"""
+"""Core visual element finder using Claude vision analysis."""
 
 from __future__ import annotations
 
 import base64
 import json
-import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from anthropic import Anthropic
+except ImportError:
+    Anthropic = None
 
 try:
     from PIL import Image
@@ -61,32 +47,30 @@ class Screenshot:
 
 
 class Finder:
-    """Find clickable elements by visual description, via a local vision model.
+    """Find clickable elements by visual description.
 
-    No API key. Nothing leaves the machine.
+    Requires an Anthropic API key (passed at init or via ANTHROPIC_API_KEY env).
     """
 
-    def __init__(self, endpoint: str | None = None, model: str | None = None,
-                 api_key: str | None = None):
-        """Point it at a local vision endpoint.
+    def __init__(self, api_key: str | None = None):
+        """Initialize the finder.
 
         Args:
-            endpoint: base URL, default AWSCREEN_URL / AWVISION_URL /
-                      http://localhost:8150
-            model:    model id, default AWSCREEN_MODEL / AWVISION_MODEL
-            api_key:  accepted and ignored. Kept so an older call site does not
-                      break, but this talks to loopback and needs no credential
-                      -- silently accepting one and sending it somewhere would
-                      be worse than refusing it.
+            api_key: Anthropic API key. If None, reads ANTHROPIC_API_KEY env var.
+                    Raises ValueError if neither is available.
         """
-        self.endpoint = (endpoint
-                         or os.getenv("AWSCREEN_URL")
-                         or os.getenv("AWVISION_URL")
-                         or "http://localhost:8150").rstrip("/")
-        self.model = (model
-                      or os.getenv("AWSCREEN_MODEL")
-                      or os.getenv("AWVISION_MODEL")
-                      or "gpt-4-vision")
+        if not api_key:
+            import os
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "API key required: pass api_key= or set ANTHROPIC_API_KEY env var"
+            )
+        if Anthropic is None:
+            raise ImportError(
+                "awscreen requires 'anthropic' package: pip install anthropic"
+            )
+        self.client = Anthropic(api_key=api_key)
 
     def load_image(self, path: str) -> Screenshot:
         """Load an image from disk.
@@ -144,58 +128,46 @@ class Finder:
         if not description or not description.strip():
             return []
 
-        b64 = self._load_image_base64(screenshot.path)
-        media = "image/png" if screenshot.format.lower() == "png" else "image/jpeg"
-        payload = {
-            "model": self.model,
-            "max_tokens": 1024,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text",
-                     "text": self._build_prompt(description,
-                                                screenshot.width,
-                                                screenshot.height)},
-                    {"type": "image_url",
-                     "image_url": {"url": "data:" + media + ";base64," + b64}},
-                ],
-            }],
-        }
-        url = self.endpoint + "/v1/chat/completions"
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
+            message = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1024,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": (
+                                        "image/png"
+                                        if screenshot.format.lower() == "png"
+                                        else "image/jpeg"
+                                    ),
+                                    "data": self._load_image_base64(
+                                        screenshot.path
+                                    ),
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": self._build_prompt(
+                                    description,
+                                    screenshot.width,
+                                    screenshot.height,
+                                ),
+                            },
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:
             raise ValueError(
-                "Vision endpoint returned HTTP " + str(exc.code) + " at " + url
-                + " -- start a vision-capable model there, or set AWSCREEN_URL.")
-        except urllib.error.URLError as exc:
-            raise ValueError(
-                "Cannot reach a vision endpoint at " + self.endpoint
-                + " (" + str(exc.reason) + "). awscreen needs a LOCAL vision"
-                + " model; nothing is sent off this machine."
-                + " Set AWSCREEN_URL or AWVISION_URL.")
+                f"API call failed (check key and network): {exc}"
+            )
 
-        choices = body.get("choices") or []
-        if not choices:
-            raise ValueError(
-                "Model '" + self.model + "' returned no choices. It is most"
-                " likely not vision-capable.")
-        content = ((choices[0].get("message") or {}).get("content") or "")
-        if not content or content.isspace():
-            # A TEXT model handed an image answers 200 with nothing. Refusing
-            # here is the whole point: a blank answer would be read as "the
-            # element is not on screen", which is a different and wrong fact.
-            raise ValueError(
-                "Model '" + self.model + "' at " + self.endpoint + " returned"
-                " EMPTY content for an image. That is what a text-only model"
-                " does when handed a picture -- it did not fail to find your"
-                " element, it cannot see. Point AWSCREEN_MODEL at a"
-                " vision-capable model.")
-        return self._parse_response(content)
+        return self._parse_response(message.content[0].text)
 
     def _load_image_base64(self, path: Path) -> str:
         """Load image and encode as base64."""

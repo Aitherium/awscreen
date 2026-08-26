@@ -16,8 +16,7 @@ Find elements in a screenshot by natural language description:
 
 ```bash
 # Set your API key
-export AWSCREEN_URL=http://localhost:8150   # a LOCAL vision model
-export AWSCREEN_MODEL=your-vision-model
+export ANTHROPIC_API_KEY="sk-ant-..."
 
 # Find the save button in a screenshot
 awscreen screenshot.png "the blue save button in the top toolbar"
@@ -28,7 +27,7 @@ Or use in Python:
 ```python
 from awscreen import Finder
 
-finder = Finder()  # reads AWSCREEN_URL / AWVISION_URL
+finder = Finder()  # reads ANTHROPIC_API_KEY env var
 screenshot = finder.load_image("screenshot.png")
 results = finder.find(screenshot, "the blue save button")
 
@@ -57,13 +56,10 @@ for match in results:
 
 Requires an Anthropic API key for vision analysis. Provide it via:
 
-1. Environment variable: `AWSCREEN_URL` (falls back to `AWVISION_URL`)
+1. Environment variable: `ANTHROPIC_API_KEY=sk-ant-...`
 2. CLI argument: `awscreen image.png description --api-key sk-ant-...`
 
-No API key. awscreen sends a picture of your screen, so it sends it to a
-loopback endpoint you run -- nothing leaves the machine. It speaks the
-OpenAI /v1/chat/completions shape, the same one awvision uses, so one
-local vision model serves both.
+Get your API key at https://console.anthropic.com.
 
 ## Related
 

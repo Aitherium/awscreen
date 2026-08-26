@@ -59,7 +59,10 @@ _INTERNAL = (
 
 #: Modules whose ABSENCE means the artifact is broken regardless of how clean it
 #: scans. __init__ is the entry point; cli is the command-line interface.
-_KEYSTONES = ("awscreen/__init__.py", "awscreen/cli.py", "awscreen/_doctor.py", "awscreen/finder.py")
+_KEYSTONES = (
+    "awscreen/__init__.py", "awscreen/cli.py",
+    "awscreen/_doctor.py", "awscreen/finder.py",
+)
 
 
 class CouldNotJudgeError(Exception):
