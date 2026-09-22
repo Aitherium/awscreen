@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
+import sys as _sys
+from pathlib import Path as _Path
+
+_PKG_ROOT = _Path(__file__).resolve().parent.parent
+if str(_PKG_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_PKG_ROOT))
+
+import pytest  # noqa: E402
 
 # Check if optional dependencies are available
 try:
