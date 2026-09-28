@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Find elements on screen by describing what they look like"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 authors = [{name = "Aither"}]
 
 dependencies = [
