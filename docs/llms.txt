@@ -1,0 +1,35 @@
+# awscreen
+
+> See this machine — what is on screen, and where to click it.
+
+Automating a desktop means naming things that have no names. Coordinates rot on the next resize, selectors do not exist outside a browser, and the one thing that does not change is what a human would see and point at.
+
+## Install
+
+```
+pip install awscreen
+```
+
+## In Claude Code
+
+- skill: `/awscreen`
+
+## Use it in 30 seconds
+
+Find the thing you want to click by describing what it looks like.
+
+## Composes with
+
+- [awdk](https://aitherium.github.io/awdk/) — Build AI agent fleets — 3 lines, any backend, local or cloud.
+- [awvision](https://aitherium.github.io/awvision/) — See an image — describe it, ask it a question, compare two.
+- [awbrowse](https://aitherium.github.io/awbrowse/) — A portable browser client — navigate, console, network, DOM, screenshot.
+
+## Where it lives
+
+- Repo: https://github.com/Aitherium/awscreen
+- Docs: https://aitherium.github.io/awscreen/
+- Manifest (keys + the one-line adoption story): https://aitherium.github.io/awscreen/aither-manifest.json
+
+This repository is mirrored from the AitherOS monorepo by `.github/workflows/sync-awscreen.yml`; hand edits made here are overwritten on the next sync — change the source instead.
+
+Everything Aitherium, in one file for agents: https://aitherium.com/llms.txt
