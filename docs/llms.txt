@@ -10,6 +10,10 @@ Automating a desktop means naming things that have no names. Coordinates rot on 
 pip install awscreen
 ```
 
+## In Claude Code
+
+- skill: `/awscreen`
+
 ## Use it in 30 seconds
 
 Find the thing you want to click by describing what it looks like.
