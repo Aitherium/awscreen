@@ -120,11 +120,33 @@ class Finder:
         except Exception as exc:
             raise ValueError(f"Cannot load image {p}: {exc}")
 
-    def capture(self) -> Screenshot:
-        """Capture current screen. Currently not implemented — use load_image."""
-        raise NotImplementedError(
-            "Screen capture not yet implemented. Use load_image(path) instead."
-        )
+    def capture(self, path: str | None = None) -> Screenshot:
+        """Capture the current screen to a PNG and return it as a Screenshot.
+
+        Args:
+            path: where to write the PNG; a temporary file when omitted.
+
+        Uses Pillow's ImageGrab (Windows and macOS; on Linux it needs an X
+        display). Raises rather than returning an empty image, so a headless
+        box says so instead of handing the vision model a blank frame.
+        """
+        try:
+            from PIL import ImageGrab
+        except ImportError as exc:
+            raise ImportError(
+                "screen capture needs Pillow: pip install Pillow"
+            ) from exc
+        if path:
+            p = Path(path)
+        else:
+            import tempfile
+            fd, name = tempfile.mkstemp(prefix="awscreen-", suffix=".png")
+            os.close(fd)
+            p = Path(name)
+        img = ImageGrab.grab()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        img.save(p, "PNG")
+        return Screenshot(path=p, width=img.width, height=img.height, format="PNG")
 
     def find(self, screenshot: Screenshot, description: str) -> list[Element]:
         """Find clickable elements matching a description.
