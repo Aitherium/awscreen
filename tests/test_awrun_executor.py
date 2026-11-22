@@ -12,6 +12,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import json  # noqa: E402
+import re  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -79,7 +80,9 @@ def test_executor_inline(tmp_path):
     assert [r.status for r in res] == ["ok", "ok"]
     item = RunStore(tmp_path).get(ex.last_item_id)
     assert item.kind == "screen" and item.status == "done"
-    assert "b64" not in json.dumps(item.spec)        # paths only, never pixels
+    # a KEY naming base64 pixels; a random hex path segment can contain "b64"
+    # paths only, never pixels
+    assert not re.search(r"\"[^\"]*b64[^\"]*\"\s*:", json.dumps(item.spec))
 
 
 @pytest.mark.parametrize("target", ["swarm", "remote", "aws"])
