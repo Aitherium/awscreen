@@ -79,14 +79,33 @@ class Finder:
                       -- silently accepting one and sending it somewhere would
                       be worse than refusing it.
         """
-        self.endpoint = (endpoint
-                         or os.getenv("AWSCREEN_URL")
-                         or os.getenv("AWVISION_URL")
-                         or "http://localhost:8150").rstrip("/")
-        self.model = (model
-                      or os.getenv("AWSCREEN_MODEL")
-                      or os.getenv("AWVISION_MODEL")
-                      or "gpt-4-vision")
+        named = endpoint or os.getenv("AWSCREEN_URL") or os.getenv("AWVISION_URL")
+        named_model = model or os.getenv("AWSCREEN_MODEL") or os.getenv("AWVISION_MODEL")
+        # Unnamed: the awvision pinned resolver picks the endpoint and model at the first
+        # find() (scheduler only, never the plain-http mesh fallback). Until then the
+        # placeholder is the loopback scheduler, never a hosted API.
+        self._resolve_later = not named
+        self.endpoint = (named or "https://127.0.0.1:8150").rstrip("/")
+        self.model = named_model or ""
+
+    def _resolve(self) -> None:
+        if not self._resolve_later and self.model:
+            return
+        try:
+            from awvision.vision import resolve_model, resolve_pinned
+        except ImportError as exc:
+            raise ValueError("awscreen needs awvision to pick a vision endpoint: "
+                             "pip install awvision, or set AWSCREEN_URL") from exc
+        if self._resolve_later:
+            try:
+                ep, mdl = resolve_pinned(require_scheduler=True)
+            except RuntimeError as exc:
+                raise ValueError(str(exc)) from exc
+            self.endpoint = ep.rstrip("/")
+            self.model = self.model or mdl
+            self._resolve_later = False
+        elif not self.model:
+            self.model = resolve_model(self.endpoint)
 
     def load_image(self, path: str) -> Screenshot:
         """Load an image from disk.
@@ -165,6 +184,7 @@ class Finder:
         """
         if not description or not description.strip():
             return []
+        self._resolve()
 
         b64 = self._load_image_base64(screenshot.path)
         media = "image/png" if screenshot.format.lower() == "png" else "image/jpeg"

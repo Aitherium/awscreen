@@ -6,6 +6,12 @@ import sys as _sys
 from pathlib import Path as _Path
 
 _PKG_ROOT = _Path(__file__).resolve().parent.parent
+# Sibling bricks first, so the tests import the worktree copies rather than an editable
+# install from another checkout; awscreen itself ends up first of all.
+for _name in ("awrun", "awgym", "awpredict", "awvision"):
+    _sib = _PKG_ROOT.parent / _name
+    if _sib.is_dir() and str(_sib) not in _sys.path:
+        _sys.path.insert(0, str(_sib))
 if str(_PKG_ROOT) not in _sys.path:
     _sys.path.insert(0, str(_PKG_ROOT))
 

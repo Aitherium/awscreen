@@ -10,7 +10,9 @@
   "pairs_with": [
     "awdk",
     "awvision",
-    "awbrowse"
+    "awbrowse",
+    "awpredict",
+    "awrun"
   ],
   "includes": [],
   "speaks_to": "any UI-parsing service"

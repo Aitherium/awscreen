@@ -46,9 +46,152 @@ for match in results:
     print(f"Found at ({match.x}, {match.y}): {match.description}")
 ```
 
+## Screen state: everything on screen, and where
+
+`awscreen state` turns one screenshot into one structured record: every element with
+its absolute pixel box, label, text, role, confidence and the sources that saw it.
+
+```bash
+awscreen state shot.png --json                 # propose -> crop -> inspect in parallel -> merge
+awscreen state shot.png --proposer blobs --no-inspect   # pixels only, zero model calls
+awscreen state --screen --out last.json        # capture the primary monitor
+awscreen state --screen --monitor 2 --out right.json  # capture monitor 2, real origin
+awscreen state right.png --monitor 2 --json    # verify the file IS monitor 2's pixels
+awscreen state shot.png --prev last.json       # unchanged frame: reuse, zero model calls
+awscreen state shot.png --dom dom.json         # join browser DOM rects onto the pixels
+awscreen state shot.png --budget-ms 5000       # deadline: calls stop when a whole crop no longer fits
+awscreen state --screen --uia                  # Windows: join the focused window's UIA tree
+awscreen state shot.png --uia uia.json         # join a recorded UIA tree (any platform)
+awscreen state shot.png --text-only --regions regions.json   # just the exact strings
+awscreen state --self-test                     # offline; never dials
+```
+
+**Inspection model.** Crops are inspected by `bonsai2-27b-5090` through MicroScheduler,
+resolved once for the whole frame and pinned. On the same three UI crops the 27B labelled
+roles correctly (text/button) where the 4B got them wrong, for 1-2 s more per crop. The
+`--model` flag beats `AWSCREEN_VLM_MODEL`, which beats awvision's own `AWVISION_MODEL` /
+host config. The `bonsai-4b-5090` lane is the intended OCR-model lane once one is
+installed. Exact strings do not depend on it: a local tesseract pass reads them, and the
+crop-inspection call returns them too (see **Exact text** below).
+
+**Exact text.** Two readers fill `element.text`, and `element.text_source` says which:
+
+- the **OCR provider** (`awscreen.ocr.TesseractTsvProvider`) runs once over the whole
+  frame and its line boxes are matched to the tightest containing region, so boxes from
+  `blobs`/`grid` still carry readable strings. No engine installed is a reported skip,
+  never a guess. `--no-ocr` turns it off.
+- the **crop inspection** call already reads the text: every crop the model inspects
+  returns its exact string in the same reply, stored with `text_source: "vlm-ocr"` and
+  tag `vlm-ocr` in `sources`. That costs **zero extra model calls**. `--text-only` skips
+  roles and geometry and answers just the strings for a region list (`--regions`), OCR
+  first and one vision call per region OCR could not read.
+
+How it sees, fast and cheap:
+
+1. **Propose** regions. The chain is `omniparser` (only when its `/health` answers in 2 s
+   with models already loaded; a cold unit is never woken), then `ocr` (local tesseract
+   TSV line boxes), then `blobs` (pure Pillow connected components), then `grid`. Every
+   attempt is reported in `proposer.tried` with its reason and time.
+2. **Crop** each region with a margin, downscaled to 448 px at most. A `CropTransform`
+   maps any crop pixel back to image and screen pixels exactly (`--origin` places a
+   monitor that does not start at 0,0).
+
+   `--monitor N` (1-based, `mss` order) makes that origin automatic and checked: with
+   `--screen` it captures that monitor with `mss` and verifies the grabbed size; with an
+   image file it verifies the file's dimensions EQUAL that monitor's, then takes its real
+   desktop origin. A frame that does not match the claimed monitor exits 2 — a Pillow
+   grab of the primary display labelled "monitor 2" would put every click 1920 px off,
+   and silence is the bug. Without `mss`, monitor 1 still falls back to Pillow; any other
+   monitor is refused instead of being silently replaced by the primary.
+3. **Neurons** (dominant colour, edge density, ink ratio, luminance, template match)
+   run on every crop. Blank or already-decided crops never reach a model.
+4. **Read text** with one OCR pass over the frame; each line goes to the tightest
+   containing region and lands in `element.text` with `text_source: "tesseract-tsv"`.
+   An absent engine is reported in `model.ocr` and skipped.
+5. **Inspect** the rest in parallel with a small vision model: **at most 4 in flight**,
+   whatever `--concurrency` says, a per-crop timeout, and at most `--max-regions` calls
+   (default 24). Its reply also carries the exact text, so those elements get
+   `text_source: "vlm-ocr"` from the same call. A crop that times out or fails becomes an
+   element with `status: timeout|error`, never dropped and never guessed. With
+   `--budget-ms` (or `AWSCREEN_BUDGET_MS`) the call cap is shrunk to the whole crops the
+   remaining time covers; the clock is re-read after every wave, and every crop it left
+   uninspected is returned with `status: budget` — still present, with no model answer
+   invented.
+6. **Merge** by IoU. Geometry goes to the stronger source
+   (`uia > dom > omniparser > vlm > ocr > cv > grid`); text is unioned, the reader is kept
+   in `text_source`, and `sources` lists every contributor.
+7. **Join UI Automation** (`--uia`). On Windows the focused window's UIA tree maps real
+   control types (a `MenuItem` stays `menuitem`) and enabled state onto the merged
+   elements by IoU, and adds nodes the pixels missed. Off Windows, or when no bridge is
+   present, it is skipped with a printed reason — no element is invented.
+
+The vision endpoint and model are resolved once per process by awvision's pinned
+resolver (your `AWVISION_URL` or config endpoint, else the local scheduler; never a
+plain-http fallback). **Crops never leave the host** except to that endpoint, and
+`--executor awrun` queues one local `screen` item; a swarm or remote runner is refused.
+
+Exit codes: `0` at least one element, `1` none, `2` could not judge (unreadable
+image, a requested proposer unavailable, the vision endpoint answered no crop, or a
+frame that is not the monitor it was claimed to be).
+
+### ScreenState (`awscreen.screen_state/1`)
+
+```json
+{"schema": "awscreen.screen_state/1",
+ "frame": {"path": "shot.png", "width": 1280, "height": 800, "origin": [0, 0]},
+ "proposer": {"ran": "blobs", "tried": [{"name": "omniparser", "ok": false, "reason": "...", "ms": 2001}]},
+ "elements": [{"id": "e0", "bbox": [100, 120, 260, 168], "label": "Save", "text": "SAVE",
+               "text_source": "vlm-ocr", "role": "button", "confidence": 0.7,
+               "source": "vlm", "sources": ["vlm", "vlm-ocr", "cv"],
+               "interactable": true, "status": "ok"}],
+ "timing": {"propose_ms": 27, "ocr_ms": 90, "inspect_ms": 6900, "uia_join_ms": 12, "total_ms": 7100},
+ "model": {"endpoint_host": "127.0.0.1", "model": "...", "calls": 4, "ok": 4,
+           "ocr": {"provider": "tesseract-tsv", "ok": true, "lines": 12, "reason": "..."}},
+ "uia": {"attempted": true, "ok": true, "source": "powershell", "nodes": 34,
+         "matched": 3, "added": 2, "skipped": 5}}
+```
+
+### DOM join input
+
+```json
+{"viewport": {"dpr": 2, "vw": 1280, "vh": 800, "sx": 0, "sy": 0},
+ "origin_px": [0, 0], "image_scale": "fit",
+ "elements": [{"ref": "#save", "tag": "button", "label": "Save", "rect": [100, 120, 160, 48]}]}
+```
+
+`rect` is CSS viewport px (`page: true` for page coordinates, scroll subtracted). Scale
+is `image_scale`, else `image_width / vw` for `"fit"`, else `dpr`.
+`awscreen.dom.AITHERBROWSER_RECT_JS` returns exactly this shape from a page eval.
+
+### UI Automation join input (Windows)
+
+```json
+{"schema": "awscreen.uia/1", "source": "powershell", "image_scale": 1.0,
+ "window": {"title": "Untitled - Notepad", "process_id": 4242, "class": "Notepad"},
+ "nodes": [{"name": "Save", "control_type": "MenuItem", "rect": [100, 120, 160, 48],
+            "is_enabled": true, "automation_id": "SaveItem", "depth": 2}]}
+```
+
+`rect` is `[x, y, w, h]` in desktop screen px (UIA's `BoundingRectangle`); `image_scale`
+maps screen px to image px when the screenshot was resized. `--uia` with no value (or
+`--uia auto`) walks the foreground window's tree: the `uiautomation` package when
+importable, else PowerShell's `UIAutomationClient` in a `CREATE_NO_WINDOW` child. Off
+Windows or with no bridge, the join is skipped and the reason is printed; a recorded
+tree JSON still joins anywhere. Control types map to roles (`Button` → `button`, `Edit`
+→ `input`, `MenuItem` → `menuitem`, ...), container chrome (Window/Pane/Group/List/
+MenuBar/...) is skipped, and a disabled control is never `interactable`. A matched DOM
+CSS rect is not overwritten by a UIA rect; UIA still supplies the role.
+
+### Planning over the screen
+
+`awscreen.env.ScreenEnv` is an environment a planner can search: `observe`, `actions`
+(click / type / scroll with absolute xy), `step`, plus `get_state_hash`, `evaluate`,
+`clone`, `token_grid`. `step` never acts without an injected `act_fn`; `clone()` replays
+only recorded transitions, and predicts "no change" for anything unseen.
+
 ## How it works
 
-`awscreen` analyzes screenshots using Claude's vision capabilities to find interactive elements matching your description. No pixel-perfect coordinates needed — just describe what you're looking for in natural language.
+`awscreen` analyzes screenshots with a local vision model to find interactive elements matching your description. No pixel-perfect coordinates needed — just describe what you're looking for in natural language.
 
 ### Features
 

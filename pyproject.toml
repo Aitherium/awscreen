@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "awscreen"
-version = "1.0.1"
+version = "1.2.0"
 description = "Find elements on screen by describing what they look like"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,8 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Aither"}]
 
 dependencies = [
-    "Pillow>=10.0.0;platform_system=='Windows'",
+    "Pillow>=10.0.0",
+    "awvision>=0.3.3",
 ]
 
 [project.scripts]
@@ -20,6 +21,9 @@ awscreen = "awscreen.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff"]
+fast = ["numpy"]
+plan = ["awpredict"]
+queue = ["awrun"]
 
 [tool.ruff]
 line-length = 100
