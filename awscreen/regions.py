@@ -433,7 +433,9 @@ class TesseractTsvProposer:
         shared implementation here", never "the screen has no text".
         """
         try:
-            from services.perception.AitherVision import ocr_with_tesseract
+            import importlib  # noqa: PLC0415 - optional, resolves only in the monorepo
+            ocr_with_tesseract = importlib.import_module(
+                "services.perception.AitherVision").ocr_with_tesseract
         except Exception:  # noqa: BLE001 - absence is expected outside the monorepo
             return None
         import tempfile
